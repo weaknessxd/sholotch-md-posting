@@ -1,5 +1,26 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { tgApi } from './_lib/telegram';
+
+// Helpers inlined per-function (shared api/_lib import didn't bundle on Vercel).
+
+const API = 'https://api.telegram.org';
+
+function botToken(): string {
+  const t = process.env.TELEGRAM_BOT_TOKEN;
+  if (!t) throw new Error('TELEGRAM_BOT_TOKEN not configured');
+  return t;
+}
+
+async function tgApi<T = unknown>(
+  method: string,
+  body: Record<string, unknown>,
+): Promise<{ ok: boolean; result?: T; description?: string }> {
+  const res = await fetch(`${API}/bot${botToken()}/${method}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return (await res.json()) as { ok: boolean; result?: T; description?: string };
+}
 
 const START_REPLY =
   'Привет! Это бот для постинга форматированных постов в каналы.\n\n' +
@@ -21,7 +42,6 @@ interface Update {
 async function finish(cb: CallbackQuery, toast: string, replacement?: string): Promise<void> {
   await tgApi('answerCallbackQuery', { callback_query_id: cb.id, text: toast });
   if (!cb.message) return;
-  // Remove the buttons; try to replace text (works for text messages only).
   await tgApi('editMessageReplyMarkup', {
     chat_id: cb.message.chat.id,
     message_id: cb.message.message_id,
@@ -46,7 +66,6 @@ async function handleCallback(cb: CallbackQuery): Promise<void> {
     return;
   }
 
-  // Confirm single/text: p:<channelId>:<messageId>
   if (data.startsWith('p:')) {
     const [, channelId, msgId] = data.split(':');
     const result = await tgApi('copyMessage', {
@@ -62,7 +81,6 @@ async function handleCallback(cb: CallbackQuery): Promise<void> {
     return;
   }
 
-  // Confirm album: pg:<channelId>:<firstId>:<count>
   if (data.startsWith('pg:')) {
     const [, channelId, firstId, count] = data.split(':');
     const ids = Array.from({ length: Number(count) }, (_, i) => Number(firstId) + i);
