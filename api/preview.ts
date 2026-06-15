@@ -1,6 +1,5 @@
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { dataUrlToBlob, tgApi, tgApiForm, verifyInitData } from './_lib/telegram';
-
-export const config = { runtime: 'nodejs' };
 
 type MediaKind = 'photo' | 'video' | 'audio' | 'document';
 interface MediaItem {
@@ -26,13 +25,6 @@ const METHOD: Record<MediaKind, string> = {
   document: 'sendDocument',
 };
 
-function json(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { 'content-type': 'application/json' },
-  });
-}
-
 function confirmKeyboard(callbackData: string) {
   return {
     inline_keyboard: [
@@ -48,47 +40,46 @@ interface SentMessage {
   message_id: number;
 }
 
-export default async function handler(req: Request): Promise<Response> {
-  if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405);
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'method not allowed' });
 
   if (!process.env.TELEGRAM_BOT_TOKEN) {
-    return json({ error: 'Сервер не настроен: в Vercel не задан TELEGRAM_BOT_TOKEN' }, 500);
+    return res.status(500).json({ error: 'Сервер не настроен: в Vercel не задан TELEGRAM_BOT_TOKEN' });
   }
 
-  const user = verifyInitData(req.headers.get('x-telegram-init-data') ?? '');
-  if (!user) return json({ error: 'Не удалось подтвердить личность (initData)' }, 401);
-
-  let channel: Channel;
-  let draft: Draft;
   try {
-    ({ channel, draft } = (await req.json()) as { channel: Channel; draft: Draft });
-  } catch {
-    return json({ error: 'bad request' }, 400);
-  }
-  if (!channel?.id) return json({ error: 'Канал не выбран' }, 400);
+    const initData = (req.headers['x-telegram-init-data'] as string) || '';
+    const user = verifyInitData(initData);
+    if (!user) return res.status(401).json({ error: 'Не удалось подтвердить личность (initData)' });
 
-  const chatId = user.id; // preview goes to the user's private chat with the bot
-  const text = draft.text ?? '';
-  const entities = JSON.stringify(draft.entities ?? []);
-  const media = draft.media ?? [];
+    const body = (req.body ?? {}) as { channel?: Channel; draft?: Draft };
+    const channel = body.channel;
+    const draft = body.draft;
+    if (!channel?.id) return res.status(400).json({ error: 'Канал не выбран' });
+    if (!draft) return res.status(400).json({ error: 'Пустой пост' });
 
-  try {
+    const chatId = user.id; // preview goes to the user's private chat with the bot
+    const text = draft.text ?? '';
+    const entities = JSON.stringify(draft.entities ?? []);
+    const media = draft.media ?? [];
+
     // ── No media: a single text message carries the confirm keyboard ──
     if (media.length === 0) {
-      if (!text.trim()) return json({ error: 'Пустой пост' }, 400);
+      if (!text.trim()) return res.status(400).json({ error: 'Пустой пост' });
       const sent = await tgApi<SentMessage>('sendMessage', {
         chat_id: chatId,
         text,
         entities: draft.entities ?? [],
       });
-      if (!sent.ok || !sent.result) return json({ error: sent.description || 'Ошибка отправки' }, 502);
+      if (!sent.ok || !sent.result)
+        return res.status(502).json({ error: sent.description || 'Ошибка отправки' });
       const cb = `p:${channel.id}:${sent.result.message_id}`;
       await tgApi('editMessageReplyMarkup', {
         chat_id: chatId,
         message_id: sent.result.message_id,
         reply_markup: confirmKeyboard(cb),
       });
-      return json({ ok: true });
+      return res.status(200).json({ ok: true });
     }
 
     // ── Single media: the media message carries the confirm keyboard ──
@@ -101,14 +92,15 @@ export default async function handler(req: Request): Promise<Response> {
       form.set('caption_entities', entities);
       form.set(m.kind, blob, m.fileName || m.kind);
       const sent = await tgApiForm<SentMessage>(METHOD[m.kind], form);
-      if (!sent.ok || !sent.result) return json({ error: sent.description || 'Ошибка отправки' }, 502);
+      if (!sent.ok || !sent.result)
+        return res.status(502).json({ error: sent.description || 'Ошибка отправки' });
       const cb = `p:${channel.id}:${sent.result.message_id}`;
       await tgApi('editMessageReplyMarkup', {
         chat_id: chatId,
         message_id: sent.result.message_id,
         reply_markup: confirmKeyboard(cb),
       });
-      return json({ ok: true });
+      return res.status(200).json({ ok: true });
     }
 
     // ── Album: send media group, then a separate confirm message ──
@@ -130,7 +122,7 @@ export default async function handler(req: Request): Promise<Response> {
     form.set('media', JSON.stringify(groupItems));
     const group = await tgApiForm<SentMessage[]>('sendMediaGroup', form);
     if (!group.ok || !group.result?.length)
-      return json({ error: group.description || 'Ошибка отправки альбома' }, 502);
+      return res.status(502).json({ error: group.description || 'Ошибка отправки альбома' });
 
     const firstId = group.result[0].message_id;
     const count = group.result.length;
@@ -140,8 +132,8 @@ export default async function handler(req: Request): Promise<Response> {
       text: `Опубликовать пост в «${channel.title}»?`,
       reply_markup: confirmKeyboard(cb),
     });
-    return json({ ok: true });
+    return res.status(200).json({ ok: true });
   } catch (e) {
-    return json({ error: e instanceof Error ? e.message : 'Ошибка сервера' }, 500);
+    return res.status(500).json({ error: e instanceof Error ? e.message : 'Ошибка сервера' });
   }
 }

@@ -1,6 +1,5 @@
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { tgApi } from './_lib/telegram';
-
-export const config = { runtime: 'nodejs' };
 
 const START_REPLY =
   'Привет! Это бот для постинга форматированных постов в каналы.\n\n' +
@@ -17,10 +16,6 @@ interface CallbackQuery {
 interface Update {
   message?: { chat: { id: number }; text?: string };
   callback_query?: CallbackQuery;
-}
-
-function ok(): Response {
-  return new Response('ok', { status: 200 });
 }
 
 async function finish(cb: CallbackQuery, toast: string, replacement?: string): Promise<void> {
@@ -54,15 +49,15 @@ async function handleCallback(cb: CallbackQuery): Promise<void> {
   // Confirm single/text: p:<channelId>:<messageId>
   if (data.startsWith('p:')) {
     const [, channelId, msgId] = data.split(':');
-    const res = await tgApi('copyMessage', {
+    const result = await tgApi('copyMessage', {
       chat_id: channelId,
       from_chat_id: fromChat,
       message_id: Number(msgId),
     });
     await finish(
       cb,
-      res.ok ? 'Опубликовано ✅' : 'Не удалось опубликовать',
-      res.ok ? '✅ Опубликовано в канал' : `Ошибка: ${res.description ?? 'не удалось'}`,
+      result.ok ? 'Опубликовано ✅' : 'Не удалось опубликовать',
+      result.ok ? '✅ Опубликовано в канал' : `Ошибка: ${result.description ?? 'не удалось'}`,
     );
     return;
   }
@@ -71,15 +66,15 @@ async function handleCallback(cb: CallbackQuery): Promise<void> {
   if (data.startsWith('pg:')) {
     const [, channelId, firstId, count] = data.split(':');
     const ids = Array.from({ length: Number(count) }, (_, i) => Number(firstId) + i);
-    const res = await tgApi('copyMessages', {
+    const result = await tgApi('copyMessages', {
       chat_id: channelId,
       from_chat_id: fromChat,
       message_ids: ids,
     });
     await finish(
       cb,
-      res.ok ? 'Опубликовано ✅' : 'Не удалось опубликовать',
-      res.ok ? '✅ Альбом опубликован в канал' : `Ошибка: ${res.description ?? 'не удалось'}`,
+      result.ok ? 'Опубликовано ✅' : 'Не удалось опубликовать',
+      result.ok ? '✅ Альбом опубликован в канал' : `Ошибка: ${result.description ?? 'не удалось'}`,
     );
     return;
   }
@@ -87,20 +82,15 @@ async function handleCallback(cb: CallbackQuery): Promise<void> {
   await tgApi('answerCallbackQuery', { callback_query_id: cb.id });
 }
 
-export default async function handler(req: Request): Promise<Response> {
-  if (req.method !== 'POST') return ok();
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') return res.status(200).send('ok');
 
   const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
-  if (secret && req.headers.get('x-telegram-bot-api-secret-token') !== secret) {
-    return new Response('forbidden', { status: 403 });
+  if (secret && req.headers['x-telegram-bot-api-secret-token'] !== secret) {
+    return res.status(403).send('forbidden');
   }
 
-  let update: Update;
-  try {
-    update = (await req.json()) as Update;
-  } catch {
-    return new Response('bad request', { status: 400 });
-  }
+  const update = (req.body ?? {}) as Update;
 
   try {
     if (update.callback_query) {
@@ -112,5 +102,5 @@ export default async function handler(req: Request): Promise<Response> {
     // swallow — always 200 so Telegram doesn't retry-storm
   }
 
-  return ok();
+  return res.status(200).send('ok');
 }
