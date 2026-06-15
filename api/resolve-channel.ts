@@ -1,4 +1,4 @@
-import { getBotId, tgApi, verifyInitData } from './_lib/telegram.js';
+import { getBotId, tgApi, verifyInitData } from './_lib/telegram';
 
 export const config = { runtime: 'nodejs' };
 

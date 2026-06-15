@@ -1,4 +1,4 @@
-import { tgApi } from './_lib/telegram.js';
+import { tgApi } from './_lib/telegram';
 
 export const config = { runtime: 'nodejs' };
 

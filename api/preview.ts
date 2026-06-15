@@ -1,4 +1,4 @@
-import { dataUrlToBlob, tgApi, tgApiForm, verifyInitData } from './_lib/telegram.js';
+import { dataUrlToBlob, tgApi, tgApiForm, verifyInitData } from './_lib/telegram';
 
 export const config = { runtime: 'nodejs' };
 
