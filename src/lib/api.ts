@@ -1,5 +1,5 @@
+import type { OutgoingMessage } from './blocks';
 import { getInitData } from './tg';
-import type { Channel, DraftPayload } from './types';
 
 async function post<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(path, {
@@ -17,18 +17,9 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 }
 
 /**
- * Resolve a @username/link, verify the bot is an admin of that channel, and
- * return canonical channel info to store.
+ * Send the composed post (a sequence of Telegram messages) to the user's
+ * private chat with the bot. The user then forwards it wherever they want.
  */
-export function resolveChannel(query: string): Promise<Channel> {
-  return post<Channel>('/api/resolve-channel', { query });
-}
-
-/**
- * Send the composed post as a preview to the user's private chat with the bot,
- * along with inline Confirm/Cancel buttons. The backend publishes to the
- * target channel (via copyMessage) only after the user taps Confirm.
- */
-export function sendPreview(channel: Channel, draft: DraftPayload): Promise<{ ok: true }> {
-  return post('/api/preview', { channel, draft });
+export function publish(messages: OutgoingMessage[]): Promise<{ ok: true; sent: number }> {
+  return post('/api/publish', { messages });
 }

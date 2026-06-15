@@ -79,6 +79,7 @@ export interface TgWebApp {
   CloudStorage?: TgCloudStorage;
   ready?: () => void;
   expand?: () => void;
+  close?: () => void;
   requestFullscreen?: () => void;
   disableVerticalSwipes?: () => void;
   setHeaderColor?: (color: string) => void;

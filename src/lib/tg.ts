@@ -122,6 +122,14 @@ export function tgExpand(): void {
   }
 }
 
+export function tgClose(): void {
+  try {
+    getTg()?.close?.();
+  } catch {
+    // ignore
+  }
+}
+
 export function getColorScheme(): 'light' | 'dark' | undefined {
   try {
     return getTg()?.colorScheme;
