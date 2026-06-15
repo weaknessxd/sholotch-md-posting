@@ -31,9 +31,8 @@ export default {
       fontFamily: {
         sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
         mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
-        // Section headers. Real design uses Xolonium (not on npm) — Orbitron
-        // is a close techno stand-in; drop a Xolonium woff2 in to swap.
-        display: ['Orbitron', 'Inter', 'sans-serif'],
+        // Section headers — Xolonium (bundled from src/assets/fonts).
+        display: ['Xolonium', 'Inter', 'sans-serif'],
       },
     },
   },

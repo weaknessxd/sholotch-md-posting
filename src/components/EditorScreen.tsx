@@ -69,7 +69,7 @@ export function EditorScreen() {
     <div className="relative min-h-full bg-white pt-safe">
       {/* Top chrome */}
       <div className="flex items-start justify-between px-[16px] pt-[14px]">
-        <img src={logoUrl} alt="" className="h-[40px] w-[40px] rotate-180 select-none" draggable={false} />
+        <img src={logoUrl} alt="" className="h-[40px] w-[40px] -scale-y-100 select-none" draggable={false} />
         <button
           onClick={handleSend}
           disabled={empty || sending}
