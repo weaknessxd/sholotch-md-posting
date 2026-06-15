@@ -55,59 +55,6 @@ async function tgApi(
   return (await res.json()) as { ok: boolean; description?: string };
 }
 
-async function tgApiForm(
-  method: string,
-  form: FormData,
-): Promise<{ ok: boolean; description?: string }> {
-  const res = await fetch(`${API}/bot${botToken()}/${method}`, { method: 'POST', body: form });
-  return (await res.json()) as { ok: boolean; description?: string };
-}
-
-function dataUrlToBlob(dataUrl: string): Blob {
-  const match = /^data:([^;]+);base64,(.*)$/.exec(dataUrl);
-  if (!match) throw new Error('Unsupported media URL');
-  return new Blob([Buffer.from(match[2], 'base64')], { type: match[1] });
-}
-
-type MediaKind = 'photo' | 'video' | 'audio' | 'document';
-interface MediaItem {
-  kind: MediaKind;
-  url: string;
-  fileName?: string;
-}
-type OutgoingMessage =
-  | { kind: 'text'; text: string; entities: unknown[] }
-  | { kind: 'media'; media: MediaItem }
-  | { kind: 'album'; media: MediaItem[] };
-
-const METHOD: Record<MediaKind, string> = {
-  photo: 'sendPhoto',
-  video: 'sendVideo',
-  audio: 'sendAudio',
-  document: 'sendDocument',
-};
-
-async function sendOne(chatId: number, msg: OutgoingMessage): Promise<{ ok: boolean; description?: string }> {
-  if (msg.kind === 'text') {
-    return tgApi('sendMessage', { chat_id: chatId, text: msg.text, entities: msg.entities });
-  }
-  if (msg.kind === 'media') {
-    const form = new FormData();
-    form.set('chat_id', String(chatId));
-    form.set(msg.media.kind, dataUrlToBlob(msg.media.url), msg.media.fileName || msg.media.kind);
-    return tgApiForm(METHOD[msg.media.kind], form);
-  }
-  // album
-  const form = new FormData();
-  form.set('chat_id', String(chatId));
-  const items = msg.media.slice(0, 10).map((m, i) => {
-    form.set(`file${i}`, dataUrlToBlob(m.url), m.fileName || `file${i}`);
-    return { type: m.kind === 'document' ? 'document' : m.kind, media: `attach://file${i}` };
-  });
-  form.set('media', JSON.stringify(items));
-  return tgApiForm('sendMediaGroup', form);
-}
-
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'method not allowed' });
 
@@ -120,16 +67,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const user = verifyInitData(initData);
     if (!user) return res.status(401).json({ error: 'Не удалось подтвердить личность (initData)' });
 
-    const body = (req.body ?? {}) as { messages?: OutgoingMessage[] };
-    const messages = body.messages ?? [];
-    if (!messages.length) return res.status(400).json({ error: 'Пустой пост' });
+    const html = String(((req.body ?? {}) as { html?: string }).html ?? '');
+    if (!html.trim()) return res.status(400).json({ error: 'Пустой пост' });
 
-    for (const msg of messages) {
-      const r = await sendOne(user.id, msg);
-      if (!r.ok) return res.status(502).json({ error: r.description || 'Ошибка отправки' });
-    }
+    // Bot API 10.1 Rich Message — content passed as an HTML string.
+    const r = await tgApi('sendRichMessage', { chat_id: user.id, html });
+    if (!r.ok) return res.status(502).json({ error: r.description || 'Ошибка отправки' });
 
-    return res.status(200).json({ ok: true, sent: messages.length });
+    return res.status(200).json({ ok: true });
   } catch (e) {
     return res.status(500).json({ error: e instanceof Error ? e.message : 'Ошибка сервера' });
   }

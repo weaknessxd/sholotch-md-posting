@@ -1,31 +1,27 @@
-import { parseMarkdown, type MessageEntity } from './markdown';
-import type { MediaItem } from './types';
-
 /**
- * Block model for the editor. A document is an ordered list of Blocks.
- * Blocks serialize to an ordered sequence of Telegram messages: runs of
- * text-renderable blocks are merged into one text message (text + entities),
- * while media blocks become their own message / album.
+ * Block model for the editor + serialization to a Telegram Rich Message
+ * (Bot API 10.1). The whole document becomes ONE HTML string sent via
+ * sendRichMessage (html field). HTML mode is used because it maps cleanly and
+ * escaping is well-defined.
+ *
+ * Media note: rich messages accept media only by HTTP(S) URL — device uploads
+ * (data: URLs) can't be embedded, so media blocks store a URL.
  */
 
 export type BlockType =
-  // Текст
   | 'text'
   | 'h1'
   | 'h2'
   | 'h3'
-  // Списки
   | 'bullets'
   | 'numbered'
   | 'checklist'
   | 'accordion'
-  // Медиа
   | 'image'
   | 'carousel'
   | 'grid'
   | 'audio'
   | 'video'
-  // Другое
   | 'code'
   | 'formula'
   | 'divider'
@@ -34,6 +30,10 @@ export type BlockType =
 
 export interface BlockBase {
   id: string;
+}
+
+export interface MediaRef {
+  url: string;
 }
 
 export type Block =
@@ -45,11 +45,8 @@ export type Block =
   | (BlockBase & { type: 'table'; value: string })
   | (BlockBase & { type: 'time'; value: number })
   | (BlockBase & { type: 'divider' })
-  | (BlockBase & { type: 'image' | 'audio' | 'video'; media: MediaItem | null })
-  | (BlockBase & { type: 'carousel' | 'grid'; media: MediaItem[] });
-
-export const TEXT_BLOCK_TYPES: BlockType[] = ['text', 'h1', 'h2', 'h3'];
-export const MEDIA_BLOCK_TYPES: BlockType[] = ['image', 'carousel', 'grid', 'audio', 'video'];
+  | (BlockBase & { type: 'image' | 'audio' | 'video'; url: string; caption: string })
+  | (BlockBase & { type: 'carousel' | 'grid'; items: MediaRef[] });
 
 let idCounter = 0;
 function nextId(): string {
@@ -63,17 +60,15 @@ export function createBlock(type: BlockType): Block {
     case 'h1':
     case 'h2':
     case 'h3':
-      return { id: nextId(), type, value: '' };
     case 'bullets':
     case 'numbered':
     case 'checklist':
+    case 'formula':
       return { id: nextId(), type, value: '' };
     case 'accordion':
       return { id: nextId(), type, title: '', value: '' };
     case 'code':
       return { id: nextId(), type, language: '', value: '' };
-    case 'formula':
-      return { id: nextId(), type, value: '' };
     case 'table':
       return { id: nextId(), type, value: 'Колонка 1 | Колонка 2\nЗначение | Значение' };
     case 'time':
@@ -83,49 +78,34 @@ export function createBlock(type: BlockType): Block {
     case 'image':
     case 'audio':
     case 'video':
-      return { id: nextId(), type, media: null };
+      return { id: nextId(), type, url: '', caption: '' };
     case 'carousel':
     case 'grid':
-      return { id: nextId(), type, media: [] };
+      return { id: nextId(), type, items: [] };
   }
 }
 
-/* ─── Serialization ─────────────────────────────────────────────────────── */
+/* ─── Serialization to Rich Message HTML ────────────────────────────────── */
 
-export interface TextFragment {
-  text: string;
-  entities: MessageEntity[];
+function esc(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function escAttr(s: string): string {
+  return esc(s).replace(/"/g, '&quot;');
+}
+function escBr(s: string): string {
+  return esc(s).replace(/\n/g, '<br>');
 }
 
-export type OutgoingMessage =
-  | ({ kind: 'text' } & TextFragment)
-  | { kind: 'media'; media: MediaItem }
-  | { kind: 'album'; media: MediaItem[] };
-
-// Superscript / subscript maps for the formula block (Telegram has no math).
-const SUP: Record<string, string> = {
-  '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷',
-  '8': '⁸', '9': '⁹', '+': '⁺', '-': '⁻', '=': '⁼', '(': '⁽', ')': '⁾', n: 'ⁿ', i: 'ⁱ',
-};
-const SUB: Record<string, string> = {
-  '0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄', '5': '₅', '6': '₆', '7': '₇',
-  '8': '₈', '9': '₉', '+': '₊', '-': '₋', '=': '₌', '(': '₍', ')': '₎',
-};
-
-function toUnicodeMath(src: string): string {
-  // x^2 -> x², x^{abc} -> superscript run; a_1 -> a₁, a_{ij} -> subscript run
-  const conv = (run: string, map: Record<string, string>) =>
-    [...run].map((ch) => map[ch] ?? ch).join('');
-  return src
-    .replace(/\^\{([^}]*)\}/g, (_, r) => conv(r, SUP))
-    .replace(/\^(\S)/g, (_, r) => conv(r, SUP))
-    .replace(/_\{([^}]*)\}/g, (_, r) => conv(r, SUB))
-    .replace(/_(\S)/g, (_, r) => conv(r, SUB));
+function mediaTag(url: string): string {
+  const u = url.toLowerCase().split('?')[0];
+  if (/\.(mp4|mov|webm|gif)$/.test(u)) return `<video src="${escAttr(url)}"></video>`;
+  if (/\.(mp3|ogg|oga|m4a|wav)$/.test(u)) return `<audio src="${escAttr(url)}"></audio>`;
+  return `<img src="${escAttr(url)}"/>`;
 }
 
-function formatTime(unix: number): string {
-  const d = new Date(unix * 1000);
-  return d.toLocaleString('ru-RU', {
+function timeLabel(unix: number): string {
+  return new Date(unix * 1000).toLocaleString('ru-RU', {
     day: '2-digit',
     month: 'long',
     year: 'numeric',
@@ -134,148 +114,95 @@ function formatTime(unix: number): string {
   });
 }
 
-function renderTable(src: string): string {
+function tableHtml(src: string): string {
   const rows = src
     .split('\n')
-    .map((line) => line.split('|').map((c) => c.trim()))
-    .filter((r) => r.length > 0);
-  if (!rows.length) return src;
-  const cols = Math.max(...rows.map((r) => r.length));
-  const widths = Array.from({ length: cols }, (_, c) =>
-    Math.max(...rows.map((r) => (r[c] ?? '').length)),
-  );
-  return rows
-    .map((r) => r.map((cell, c) => (cell ?? '').padEnd(widths[c])).join('  '))
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((l) => l.split('|').map((c) => c.trim()));
+  if (!rows.length) return '';
+  const [head, ...body] = rows;
+  const headHtml = `<tr>${head.map((c) => `<th>${esc(c)}</th>`).join('')}</tr>`;
+  const bodyHtml = body.map((r) => `<tr>${r.map((c) => `<td>${esc(c)}</td>`).join('')}</tr>`).join('');
+  return `<table>${headHtml}${bodyHtml}</table>`;
+}
+
+function blockToHtml(block: Block): string {
+  switch (block.type) {
+    case 'text':
+      return block.value.trim() ? `<p>${escBr(block.value)}</p>` : '';
+    case 'h1':
+      return block.value.trim() ? `<h1>${esc(block.value)}</h1>` : '';
+    case 'h2':
+      return block.value.trim() ? `<h2>${esc(block.value)}</h2>` : '';
+    case 'h3':
+      return block.value.trim() ? `<h3>${esc(block.value)}</h3>` : '';
+    case 'bullets': {
+      const items = block.value.split('\n').filter((l) => l.trim());
+      return items.length ? `<ul>${items.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>` : '';
+    }
+    case 'numbered': {
+      const items = block.value.split('\n').filter((l) => l.trim());
+      return items.length ? `<ol>${items.map((l) => `<li>${esc(l)}</li>`).join('')}</ol>` : '';
+    }
+    case 'checklist': {
+      const items = block.value.split('\n').filter((l) => l.trim());
+      if (!items.length) return '';
+      const lis = items
+        .map((l) => {
+          const checked = /^\s*\[x\]/i.test(l);
+          const text = l.replace(/^\s*\[[ x]\]\s*/i, '');
+          return `<li><input type="checkbox"${checked ? ' checked' : ''}>${esc(text)}</li>`;
+        })
+        .join('');
+      return `<ul>${lis}</ul>`;
+    }
+    case 'accordion': {
+      if (!block.title.trim() && !block.value.trim()) return '';
+      return `<details><summary>${esc(block.title || 'Подробнее')}</summary><p>${escBr(block.value)}</p></details>`;
+    }
+    case 'code': {
+      if (!block.value.trim()) return '';
+      const inner = block.language
+        ? `<code class="language-${escAttr(block.language)}">${esc(block.value)}</code>`
+        : esc(block.value);
+      return `<pre>${inner}</pre>`;
+    }
+    case 'formula':
+      return block.value.trim() ? `<tg-math-block>${esc(block.value)}</tg-math-block>` : '';
+    case 'divider':
+      return '<hr/>';
+    case 'time':
+      return `<p><tg-time unix="${block.value}" format="wDT">${esc(timeLabel(block.value))}</tg-time></p>`;
+    case 'table':
+      return tableHtml(block.value);
+    case 'image':
+    case 'audio':
+    case 'video': {
+      if (!block.url.trim()) return '';
+      const tag = mediaTag(block.url);
+      return block.caption.trim()
+        ? `<figure>${tag}<figcaption>${esc(block.caption)}</figcaption></figure>`
+        : tag;
+    }
+    case 'carousel':
+    case 'grid': {
+      const valid = block.items.filter((m) => m.url.trim());
+      if (!valid.length) return '';
+      const inner = valid.map((m) => mediaTag(m.url)).join('');
+      return block.type === 'carousel' ? `<tg-slideshow>${inner}</tg-slideshow>` : `<tg-collage>${inner}</tg-collage>`;
+    }
+  }
+}
+
+export function serializeToRichHtml(blocks: Block[]): string {
+  return blocks
+    .map(blockToHtml)
+    .filter(Boolean)
     .join('\n');
 }
 
-/** Convert a single text-renderable block to a {text, entities} fragment. */
-function blockToFragment(block: Block): TextFragment | null {
-  switch (block.type) {
-    case 'text': {
-      return parseMarkdown(block.value);
-    }
-    case 'h1':
-    case 'h2':
-    case 'h3': {
-      const inner = parseMarkdown(block.value);
-      const text = block.type === 'h1' ? inner.text.toUpperCase() : inner.text;
-      return {
-        text,
-        entities: [{ type: 'bold', offset: 0, length: text.length }, ...inner.entities],
-      };
-    }
-    case 'bullets': {
-      const text = block.value
-        .split('\n')
-        .map((l) => `• ${l}`)
-        .join('\n');
-      return { text, entities: [] };
-    }
-    case 'numbered': {
-      const text = block.value
-        .split('\n')
-        .map((l, i) => `${i + 1}. ${l}`)
-        .join('\n');
-      return { text, entities: [] };
-    }
-    case 'checklist': {
-      const text = block.value
-        .split('\n')
-        .map((l) => {
-          const done = /^\s*\[x\]\s*/i.test(l);
-          return `${done ? '✅' : '☐'} ${l.replace(/^\s*\[[ x]\]\s*/i, '')}`;
-        })
-        .join('\n');
-      return { text, entities: [] };
-    }
-    case 'accordion': {
-      const head = parseMarkdown(block.title);
-      const body = parseMarkdown(block.value);
-      const text = head.text + (body.text ? `\n${body.text}` : '');
-      const entities: MessageEntity[] = [
-        { type: 'expandable_blockquote', offset: 0, length: text.length },
-        ...head.entities,
-      ];
-      if (head.text) entities.push({ type: 'bold', offset: 0, length: head.text.length });
-      const bodyOffset = head.text.length + 1;
-      for (const e of body.entities) entities.push({ ...e, offset: e.offset + bodyOffset });
-      return { text, entities };
-    }
-    case 'code': {
-      const text = block.value;
-      return {
-        text,
-        entities: [
-          { type: 'pre', offset: 0, length: text.length, language: block.language || undefined },
-        ],
-      };
-    }
-    case 'formula': {
-      return { text: toUnicodeMath(block.value), entities: [] };
-    }
-    case 'table': {
-      const text = renderTable(block.value);
-      return { text, entities: [{ type: 'pre', offset: 0, length: text.length }] };
-    }
-    case 'time': {
-      return { text: formatTime(block.value), entities: [] };
-    }
-    case 'divider': {
-      return { text: '──────────', entities: [] };
-    }
-    default:
-      return null; // media blocks
-  }
-}
-
-/** Merge text fragments into one with adjusted offsets, joined by `\n\n`. */
-function mergeFragments(frags: TextFragment[]): TextFragment {
-  let text = '';
-  const entities: MessageEntity[] = [];
-  frags.forEach((f, idx) => {
-    if (idx > 0) text += '\n\n';
-    const base = text.length;
-    text += f.text;
-    for (const e of f.entities) entities.push({ ...e, offset: e.offset + base });
-  });
-  return { text, entities };
-}
-
-export function serializeBlocks(blocks: Block[]): OutgoingMessage[] {
-  const messages: OutgoingMessage[] = [];
-  let buffer: TextFragment[] = [];
-
-  const flush = () => {
-    if (!buffer.length) return;
-    const merged = mergeFragments(buffer);
-    if (merged.text.trim().length > 0) messages.push({ kind: 'text', ...merged });
-    buffer = [];
-  };
-
-  for (const block of blocks) {
-    if (block.type === 'image' || block.type === 'audio' || block.type === 'video') {
-      if (block.media) {
-        flush();
-        messages.push({ kind: 'media', media: block.media });
-      }
-      continue;
-    }
-    if (block.type === 'carousel' || block.type === 'grid') {
-      if (block.media.length) {
-        flush();
-        messages.push({ kind: 'album', media: block.media });
-      }
-      continue;
-    }
-    const frag = blockToFragment(block);
-    if (frag) buffer.push(frag);
-  }
-  flush();
-  return messages;
-}
-
-/** True when the document has nothing publishable. */
+/** Empty if nothing but blanks/dividers would be sent. */
 export function isEmptyDocument(blocks: Block[]): boolean {
-  return serializeBlocks(blocks).length === 0;
+  return serializeToRichHtml(blocks).replace(/<hr\/>/g, '').trim().length === 0;
 }

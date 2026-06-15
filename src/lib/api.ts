@@ -1,4 +1,3 @@
-import type { OutgoingMessage } from './blocks';
 import { getInitData } from './tg';
 
 async function post<T>(path: string, body: unknown): Promise<T> {
@@ -17,9 +16,9 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 }
 
 /**
- * Send the composed post (a sequence of Telegram messages) to the user's
- * private chat with the bot. The user then forwards it wherever they want.
+ * Send the composed post as a single Telegram Rich Message (HTML) to the
+ * user's private chat with the bot. The user then forwards it.
  */
-export function publish(messages: OutgoingMessage[]): Promise<{ ok: true; sent: number }> {
-  return post('/api/publish', { messages });
+export function publish(html: string): Promise<{ ok: true }> {
+  return post('/api/publish', { html });
 }

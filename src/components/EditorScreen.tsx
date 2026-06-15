@@ -9,7 +9,7 @@ import {
 } from '@dnd-kit/core';
 import { SortableContext, arrayMove, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { publish } from '@/lib/api';
-import { createBlock, isEmptyDocument, serializeBlocks, type Block, type BlockType } from '@/lib/blocks';
+import { createBlock, isEmptyDocument, serializeToRichHtml, type Block, type BlockType } from '@/lib/blocks';
 import { hapticImpact, hapticNotification, showAlert, tgClose } from '@/lib/tg';
 import { BlockRow } from './BlockRow';
 import { Drawer } from './Drawer';
@@ -52,7 +52,7 @@ export function EditorScreen() {
     if (isEmptyDocument(blocks) || sending) return;
     setSending(true);
     try {
-      await publish(serializeBlocks(blocks));
+      await publish(serializeToRichHtml(blocks));
       hapticNotification('success');
       tgClose();
     } catch (err) {
