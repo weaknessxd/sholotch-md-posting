@@ -51,6 +51,10 @@ interface SentMessage {
 export default async function handler(req: Request): Promise<Response> {
   if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405);
 
+  if (!process.env.TELEGRAM_BOT_TOKEN) {
+    return json({ error: 'Сервер не настроен: в Vercel не задан TELEGRAM_BOT_TOKEN' }, 500);
+  }
+
   const user = verifyInitData(req.headers.get('x-telegram-init-data') ?? '');
   if (!user) return json({ error: 'Не удалось подтвердить личность (initData)' }, 401);
 
