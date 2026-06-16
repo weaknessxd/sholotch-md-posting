@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   DndContext,
   PointerSensor,
@@ -22,6 +22,19 @@ export function EditorScreen() {
   const [sending, setSending] = useState(false);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+  // Tap outside the active block commits it (deactivates → hides delete X).
+  // The latest value is already in state, so this only clears the active UI.
+  useEffect(() => {
+    if (!activeId) return;
+    const onDown = (e: PointerEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el?.closest(`[data-block-id="${activeId}"]`)) return; // inside active row
+      setActiveId(null);
+    };
+    document.addEventListener('pointerdown', onDown);
+    return () => document.removeEventListener('pointerdown', onDown);
+  }, [activeId]);
 
   const patchBlock = (id: string, patch: Partial<Block>) =>
     setBlocks((prev) => prev.map((b) => (b.id === id ? ({ ...b, ...patch } as Block) : b)));
@@ -89,7 +102,6 @@ export function EditorScreen() {
                 block={b}
                 active={activeId === b.id}
                 onActivate={() => setActiveId(b.id)}
-                onDone={() => setActiveId(null)}
                 onDelete={() => deleteBlock(b.id)}
                 onChange={(patch) => patchBlock(b.id, patch)}
               />

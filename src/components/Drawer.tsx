@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { BlockType } from '@/lib/blocks';
 import { hapticSelection } from '@/lib/tg';
 import { DRAWER_SECTIONS } from './blockMeta';
@@ -10,7 +10,25 @@ interface DrawerProps {
 }
 
 export function Drawer({ open, onClose, onSelect }: DrawerProps) {
+  // Mount only while open (+ a short exit window). Toggling visibility via
+  // opacity left a frozen backdrop-filter layer in the TG webview that broke
+  // the second open; unmounting on close avoids that entirely.
+  const [mounted, setMounted] = useState(open);
+  const [shown, setShown] = useState(false);
   const dragStart = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setMounted(true);
+      const r = requestAnimationFrame(() => setShown(true));
+      return () => cancelAnimationFrame(r);
+    }
+    setShown(false);
+    const t = setTimeout(() => setMounted(false), 300);
+    return () => clearTimeout(t);
+  }, [open]);
+
+  if (!mounted) return null;
 
   const onHandlePointerDown = (e: React.PointerEvent) => {
     dragStart.current = e.clientY;
@@ -23,21 +41,19 @@ export function Drawer({ open, onClose, onSelect }: DrawerProps) {
   };
 
   return (
-    <div
-      className={`fixed inset-0 z-50 transition-opacity duration-200 ${
-        open ? 'opacity-100' : 'pointer-events-none opacity-0'
-      }`}
-    >
+    <div className="fixed inset-0 z-50">
       {/* Backdrop: darken 15% + blur, tap to close */}
       <div
-        className="absolute inset-0 bg-black/15 backdrop-blur-[2px]"
+        className={`absolute inset-0 bg-black/15 backdrop-blur-[2px] transition-opacity duration-300 ${
+          shown ? 'opacity-100' : 'opacity-0'
+        }`}
         onClick={onClose}
       />
 
       {/* Sheet — half the screen, slides up */}
       <div
         className={`absolute inset-x-0 bottom-0 mx-auto flex h-[50vh] max-w-[440px] flex-col rounded-t-[40px] border-x-4 border-t-4 border-[#f7f7f7] bg-white px-[18px] pb-[24px] pt-[12px] transition-transform duration-300 ${
-          open ? 'translate-y-0' : 'translate-y-full'
+          shown ? 'translate-y-0' : 'translate-y-full'
         }`}
       >
         {/* Grab handle (swipe down to close) */}
