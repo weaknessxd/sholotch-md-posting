@@ -13,7 +13,7 @@ import { createBlock, isEmptyDocument, serializeToRichHtml, type Block, type Blo
 import { hapticImpact, hapticNotification, showAlert, tgClose } from '@/lib/tg';
 import { BlockRow } from './BlockRow';
 import { Drawer } from './Drawer';
-import logoUrl from '@/assets/icons/blocks/logo.svg';
+import logoUrl from '@/assets/icons/blocks/logo_md.svg';
 
 export function EditorScreen() {
   const [blocks, setBlocks] = useState<Block[]>(() => [createBlock('text')]);
@@ -79,7 +79,7 @@ export function EditorScreen() {
   const empty = isEmptyDocument(blocks);
 
   return (
-    <div className="relative min-h-full bg-white pt-safe">
+    <div className="relative min-h-full bg-gradient-to-b from-[#FFFFFF] via-[#FFD8D8] to-[#FF0000] pt-safe">
       {/* Top chrome */}
       <div className="flex items-start justify-between px-[16px] pt-[14px]">
         <img src={logoUrl} alt="" className="h-[40px] w-[40px] select-none" draggable={false} />

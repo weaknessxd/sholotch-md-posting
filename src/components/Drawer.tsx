@@ -52,7 +52,7 @@ export function Drawer({ open, onClose, onSelect }: DrawerProps) {
 
       {/* Sheet — half the screen, slides up */}
       <div
-        className={`absolute inset-x-0 bottom-0 mx-auto flex h-[50vh] max-w-[440px] flex-col rounded-t-[40px] border-x-4 border-t-4 border-[#f7f7f7] bg-white px-[18px] pb-[24px] pt-[12px] transition-transform duration-300 ${
+        className={`absolute inset-x-0 bottom-0 mx-auto flex h-[50vh] max-w-[440px] flex-col rounded-t-[40px] border-x-4 border-t-4 border-[#f7f7f7] bg-gradient-to-b from-[#FFFFFF] to-[#E0E0E0] px-[18px] pb-[24px] pt-[12px] transition-transform duration-300 ${
           shown ? 'translate-y-0' : 'translate-y-full'
         }`}
       >
