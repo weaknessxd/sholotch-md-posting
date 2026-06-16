@@ -70,8 +70,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const html = String(((req.body ?? {}) as { html?: string }).html ?? '');
     if (!html.trim()) return res.status(400).json({ error: 'Пустой пост' });
 
-    // Bot API 10.1 Rich Message — content passed as an HTML string.
-    const r = await tgApi('sendRichMessage', { chat_id: user.id, html });
+    // Bot API 10.1 Rich Message — content goes inside an InputRichMessage
+    // object (the `rich_message` param), with the HTML in its `html` field.
+    const r = await tgApi('sendRichMessage', { chat_id: user.id, rich_message: { html } });
     if (!r.ok) return res.status(502).json({ error: r.description || 'Ошибка отправки' });
 
     return res.status(200).json({ ok: true });
